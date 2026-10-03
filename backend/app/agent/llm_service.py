@@ -120,15 +120,114 @@ class MockLLMService:
         return {"task_id": next_task["id"], "rationale": rationale}
 
     def analyze_stuck(self, task_title: str, student_message: str) -> dict:
+        roadblock = student_message or "General difficulty progressing"
         return {
-            "diagnosis": "It seems you're finding this task challenging. That's completely normal!",
-            "suggestion": f"Try breaking '{task_title}' into even smaller sub-steps. Start with just the first 10 minutes of work.",
+            "diagnosis": f"Roadblock identified: '{roadblock}'. The step '{task_title}' can be broken down into a 15-minute focused micro-step.",
+            "suggestion": f"We've simplified this into a doable micro-action: isolate and verify the smallest working piece first.",
             "alternatives": [
-                "Take a 5-minute break and come back fresh.",
-                "Search for a tutorial or example specifically for this step.",
-                "Try explaining the problem out loud (rubber duck debugging).",
+                "Adopt the 15-minute unblocker micro-step created by the agent.",
+                "Skip this step for now and advance to the next action.",
+                "Take a 5-minute break and revisit with fresh eyes.",
             ],
         }
+
+    def adapt_step_for_roadblock(self, task_title: str, roadblock: str, goal_title: str) -> dict:
+        rb_lower = (roadblock or "").lower()
+        title_lower = (task_title or "").lower()
+
+        if any(w in rb_lower or w in title_lower for w in ["mongo", "database", "db", "mongoose", "connect"]):
+            return {
+                "diagnosis": f"Connection or setup issue with database: '{roadblock}'. Often caused by invalid URI, network block, or service not running.",
+                "suggestion": "Verify your MongoDB URI with a minimal 5-line standalone test script.",
+                "alternatives": [
+                    "Verify connection string in .env",
+                    "Check Atlas Network Access IP whitelist (add 0.0.0.0/0)",
+                    "Skip to next task for now",
+                ],
+                "adapted_task": {
+                    "title": "Verify MongoDB URI with a 5-line test script",
+                    "description": "Create a minimal `test-db.js` file with `mongoose.connect(process.env.MONGO_URI)` and console.log success/error to isolate the exact issue.",
+                    "estimated_minutes": 15,
+                    "difficulty": "easy",
+                },
+                "checklist": [
+                    "Verify your connection string in .env (starts with mongodb:// or mongodb+srv://)",
+                    "Check MongoDB Atlas Network Access IP Whitelist (add 0.0.0.0/0 for testing)",
+                    "Run `node test-db.js` and observe the exact terminal output",
+                    "Once connected, copy the working string into your main app configuration",
+                ],
+                "rationale": "Isolating the database connection in a standalone 5-line script removes project noise and pinpoints the exact failure.",
+            }
+        elif any(w in rb_lower or w in title_lower for w in ["auth", "jwt", "token", "login", "password"]):
+            return {
+                "diagnosis": f"Authentication roadblock: '{roadblock}'. Typically related to token signing secrets, headers, or password hashing flow.",
+                "suggestion": "Build and test a minimal JWT sign and verify snippet.",
+                "alternatives": [
+                    "Test jwt.sign() with a dummy payload and hardcoded secret",
+                    "Verify headers in Postman / curl",
+                    "Skip to next task for now",
+                ],
+                "adapted_task": {
+                    "title": "Build minimal JWT sign & verify snippet",
+                    "description": "Create a quick test script to sign a payload with jwt.sign() and verify it with jwt.verify() before wiring into routes.",
+                    "estimated_minutes": 15,
+                    "difficulty": "easy",
+                },
+                "checklist": [
+                    "Test jwt.sign() with a dummy payload and a hardcoded secret",
+                    "Verify the resulting token with jwt.verify()",
+                    "Check that the Authorization header in requests matches 'Bearer <token>'",
+                ],
+                "rationale": "Testing token generation in isolation ensures your auth logic is solid before integrating with full HTTP middleware.",
+            }
+        elif any(w in rb_lower or w in title_lower for w in ["install", "npm", "dependency", "package", "version"]):
+            return {
+                "diagnosis": f"Package/dependency roadblock: '{roadblock}'. Usually caused by version mismatch, node version, or cache conflict.",
+                "suggestion": "Clean npm cache and install exact package version with legacy peer deps flag.",
+                "alternatives": [
+                    "Check node version (node -v)",
+                    "Run npm install --legacy-peer-deps",
+                    "Skip to next task for now",
+                ],
+                "adapted_task": {
+                    "title": "Clean cache and install exact package version",
+                    "description": "Run `npm cache clean --force` and install the package with explicit version or --legacy-peer-deps flag.",
+                    "estimated_minutes": 10,
+                    "difficulty": "easy",
+                },
+                "checklist": [
+                    "Check your node version with `node -v` (recommend Node 18 or 20 LTS)",
+                    "Try `npm install --save <package> --legacy-peer-deps`",
+                    "Inspect package.json to ensure no conflicting dependencies",
+                ],
+                "rationale": "Resolving dependency flags directly unblocks package installation in under 10 minutes.",
+            }
+        else:
+            # Universal intelligent fallback
+            clean_rb = roadblock.strip() if roadblock else "Task complexity"
+            if len(clean_rb) > 40:
+                clean_rb = clean_rb[:37] + "..."
+            return {
+                "diagnosis": f"Roadblock: '{clean_rb}'. Breaking '{task_title}' into an immediate 15-minute micro-action.",
+                "suggestion": f"Draft a minimal 5-line working prototype to isolate: {task_title[:40]}.",
+                "alternatives": [
+                    "Work on the 15-minute unblocker micro-step",
+                    "Skip this step and advance to the next action",
+                    "Consult example code in documentation",
+                ],
+                "adapted_task": {
+                    "title": f"Isolate & draft minimal prototype for: {task_title[:40]}",
+                    "description": f"Overcome '{clean_rb}' by creating the simplest possible 5-line version of this task without external dependencies.",
+                    "estimated_minutes": 15,
+                    "difficulty": "easy",
+                },
+                "checklist": [
+                    "Write down the single input and single expected output for this step",
+                    "Create a minimal scratch file to test this logic independently",
+                    "Once working in the scratch file, move the solution into your codebase",
+                ],
+                "rationale": "Creating a small standalone prototype removes mental overwhelm and provides instant feedback.",
+            }
 
     def observe_progress(self, task_title: str, student_message: str) -> dict:
         return {
@@ -260,6 +359,39 @@ Help them get unstuck. Return ONLY valid JSON:
         response = re.sub(r"```json\s*", "", response)
         response = re.sub(r"```\s*", "", response)
         return json.loads(response.strip())
+
+    def adapt_step_for_roadblock(self, task_title: str, roadblock: str, goal_title: str) -> dict:
+        prompt = f"""You are NextStep, an AI agent helping a student adapt their current task due to a roadblock.
+
+Goal: {goal_title}
+Blocked Task: {task_title}
+Roadblock Description: "{roadblock}"
+
+Analyze the roadblock and formulate ONE concrete, simplified 10-15 minute doable micro-step that directly unblocks the student.
+Return ONLY valid JSON (no markdown):
+{{
+  "diagnosis": "Clear diagnosis of the roadblock (1 sentence)",
+  "adapted_task": {{
+    "title": "Actionable title for the 10-15 min unblocker micro-step (max 65 chars)",
+    "description": "Clear step-by-step instructions on what exact action to take right now",
+    "estimated_minutes": 15,
+    "difficulty": "easy"
+  }},
+  "checklist": [
+    "Concrete actionable check 1",
+    "Concrete actionable check 2",
+    "Concrete actionable check 3"
+  ],
+  "rationale": "Why this adapted step will unblock you immediately (1 sentence)"
+}}"""
+        try:
+            response = self.generate(prompt)
+            response = re.sub(r"```json\s*", "", response)
+            response = re.sub(r"```\s*", "", response)
+            return json.loads(response.strip())
+        except Exception:
+            # Fallback to MockLLMService logic on parse error
+            return MockLLMService().adapt_step_for_roadblock(task_title, roadblock, goal_title)
 
 
 def get_llm_service():

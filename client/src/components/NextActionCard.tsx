@@ -99,13 +99,18 @@ export default function NextActionCard({
       {/* Top Banner indicating Agent Focus */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-electric-400 animate-pulse" />
-          <span className="text-xs uppercase tracking-wider font-bold text-electric-400">
-            Current Actionable Next Step
+          <span className={`w-2.5 h-2.5 rounded-full ${task.title.includes('[Unblocker]') || task.title.includes('⚡') ? 'bg-amber-400 animate-ping' : 'bg-electric-400 animate-pulse'}`} />
+          <span className={`text-xs uppercase tracking-wider font-bold ${task.title.includes('[Unblocker]') || task.title.includes('⚡') ? 'text-amber-400 flex items-center gap-1' : 'text-electric-400'}`}>
+            {task.title.includes('[Unblocker]') || task.title.includes('⚡') ? '⚡ Agent Adapted Unblocker Step' : 'Current Actionable Next Step'}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
+          {(task.title.includes('[Unblocker]') || task.title.includes('⚡')) && (
+            <span className="badge bg-amber-500/20 border-amber-500/30 text-amber-300 text-[11px] font-bold">
+              Unblocker
+            </span>
+          )}
           <span className={`badge border text-[11px] font-medium ${getDifficultyColor(task.difficulty)}`}>
             <Flame className="w-3 h-3" />
             <span className="capitalize">{task.difficulty || 'Medium'}</span>
@@ -129,9 +134,9 @@ export default function NextActionCard({
       </h2>
 
       {task.description && (
-        <p className="text-sm text-white/70 mb-5 leading-relaxed bg-white/5 p-3.5 rounded-xl border border-white/5">
+        <div className="text-xs sm:text-sm text-white/80 mb-5 leading-relaxed bg-white/5 p-4 rounded-xl border border-white/10 whitespace-pre-line">
           {task.description}
-        </p>
+        </div>
       )}
 
       {/* Pomodoro & Timer Section */}

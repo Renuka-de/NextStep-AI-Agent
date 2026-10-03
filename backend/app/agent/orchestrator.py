@@ -257,20 +257,92 @@ def handle_action(
         }
 
     elif action == "stuck":
-        _log_event(db, goal_id, "student_stuck", {
+        # 1. Capture the roadblock in long-term memory for personalization
+        if goal and goal.user_id:
+            mem = models.MemoryItem(
+                user_id=goal.user_id,
+                memory_type="roadblock",
+                content=f"Roadblock on '{current_task_title}': {student_message or 'Stuck on task'}",
+                confidence=0.95,
+            )
+            db.add(mem)
+
+        # 2. Log event
+        _log_event(db, goal_id, "roadblock_captured", {
             "task_id": current_task_id,
-            "message": student_message,
+            "task_title": current_task_title,
+            "roadblock": student_message or "General difficulty",
         })
 
-        analysis = llm().analyze_stuck(current_task_title, student_message)
-        agent_state.state = "replanning"
-        agent_state.last_action = "stuck"
+        # 3. Use LLM to diagnose roadblock and formulate a 15-min doable micro-step
+        adapted_data = llm().adapt_step_for_roadblock(
+            current_task_title,
+            student_message or "General difficulty",
+            goal.title,
+        )
+
+        adapted_task_data = adapted_data.get("adapted_task", {})
+        checklist_items = adapted_data.get("checklist", [])
+        checklist_str = "\n".join(f"- {c}" for c in checklist_items)
+
+        unblocker_desc = (
+            f"🎯 **Unblocker Micro-Step for:** {current_task_title}\n\n"
+            f"💡 **Diagnosis:** {adapted_data.get('diagnosis', '')}\n\n"
+            f"{adapted_task_data.get('description', '')}\n\n"
+            f"📋 **Immediate Checklist:**\n{checklist_str}\n\n"
+            f"✨ *Why this works:* {adapted_data.get('rationale', '')}"
+        )
+
+        # 4. Insert the new adapted unblocker task as in_progress
+        target_milestone_id = current_task.milestone_id if current_task else (goal.milestones[0].id if goal.milestones else None)
+        target_order = current_task.order_index if current_task else 0
+
+        # Push the blocked task and subsequent tasks down in order_index
+        if current_task:
+            current_task.status = "pending"
+            current_task.order_index = target_order + 1
+
+        new_task = models.Task(
+            milestone_id=target_milestone_id,
+            title=f"[Unblocker] {adapted_task_data.get('title', 'Resolve Roadblock: Minimal Working Step')}",
+            description=unblocker_desc,
+            order_index=target_order,
+            estimated_minutes=adapted_task_data.get("estimated_minutes", 15),
+            difficulty="easy",
+            status="in_progress",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(new_task)
+        db.flush()
+
+        # 5. Move agent state directly to the new unblocker task
+        agent_state.current_task_id = new_task.id
+        agent_state.state = "waiting_for_student"
+        agent_state.last_action = "adapted_roadblock"
+        agent_state.iteration += 1
+
+        _log_event(db, goal_id, "step_adapted", {
+            "original_task_id": current_task_id,
+            "original_task_title": current_task_title,
+            "new_task_id": new_task.id,
+            "new_task_title": new_task.title,
+            "diagnosis": adapted_data.get("diagnosis", ""),
+        })
+
         db.commit()
 
         return {
-            "action": "stuck",
-            "stuck_analysis": analysis,
-            "current_task_id": current_task_id,
+            "action": "stuck_adapted",
+            "stuck_analysis": adapted_data,
+            "new_task": {
+                "id": new_task.id,
+                "title": new_task.title,
+                "description": new_task.description,
+                "estimated_minutes": new_task.estimated_minutes,
+                "difficulty": new_task.difficulty,
+                "status": "in_progress",
+            },
+            "message": f"Roadblock captured! The agent adapted your plan into a doable 15-minute step: {new_task.title}",
         }
 
     elif action == "skip":

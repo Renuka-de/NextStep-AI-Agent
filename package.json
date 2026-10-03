@@ -1,0 +1,12 @@
+{
+  "name": "nextstep-root",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && .venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
+    "dev:frontend": "cd client && npm run dev",
+    "build:frontend": "cd client && npm run build",
+    "seed:backend": "cd backend && .venv\\Scripts\\python.exe -m app.db.seed",
+    "test:backend": "cd backend && .venv\\Scripts\\python.exe test_integration.py"
+  }
+}

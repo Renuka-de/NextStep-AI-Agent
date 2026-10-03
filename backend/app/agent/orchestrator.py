@@ -192,6 +192,8 @@ def handle_action(
     Handle a student action on the current task.
     """
     goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
+    if goal:
+        goal.updated_at = datetime.now(timezone.utc)
     agent_state = _get_or_create_agent_state(db, goal_id)
     current_task_id = agent_state.current_task_id
 
